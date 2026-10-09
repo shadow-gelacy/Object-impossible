@@ -1,0 +1,346 @@
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Entity = script.Parent
+if not Entity:IsA("Model") then return end
+
+local SPEED = 40
+local DAMAGE = 1000
+local KILL_RANGE = 15
+local NODE_DISTANCE = 2
+local ROOM = 50
+local NEXT_ROOM = 51
+local START_DELAY = 15
+
+local Player = Players.LocalPlayer
+local GameData = ReplicatedStorage:WaitForChild("GameData", 10)
+local LatestRoom = GameData and GameData:WaitForChild("LatestRoom", 10)
+
+if not LatestRoom then
+    warn("Common Sense: LatestRoom not found")
+    return
+end
+
+local Root = Entity.PrimaryPart
+    or Entity:FindFirstChild("HumanoidRootPart", true)
+    or Entity:FindFirstChildWhichIsA("BasePart", true)
+
+if not Root then
+    warn("Common Sense: No root part")
+    return
+end
+
+Entity.PrimaryPart = Root
+Entity.Name = "Common Sense"
+
+Entity:SetAttribute("EntityName", "Common Sense")
+Entity:SetAttribute("DeathCause", "Common Sense")
+Entity:SetAttribute("Cause", "Common Sense")
+Entity:SetAttribute("IsCustomEntity", true)
+Entity:SetAttribute("NoAI", true)
+
+Entity:SetAttribute("CrucifixCompatible", true)
+Entity:SetAttribute("CanBeCrucified", true)
+Entity:SetAttribute("CrucifixColor", Color3.new(1, 1, 1))
+Entity:SetAttribute("CrucifixType", "Guiding")
+Entity:SetAttribute("CrucifixRange", 40)
+Entity:SetAttribute("CrucifixResist", false)
+Entity:SetAttribute("CrucifixBreak", true)
+
+for _, v in ipairs(Entity:GetDescendants()) do
+    if v:IsA("BasePart") then
+        v.Anchored = true
+        v.CanCollide = false
+    end
+end
+
+local function roomNumber()
+    return tonumber(LatestRoom.Value) or 0
+end
+
+local function destroy()
+    if Entity.Parent then
+        Entity:Destroy()
+    end
+end
+
+local function crucified()
+    local attributes = {
+        "GoingToHell",
+        "Crucified",
+        "Crucifying",
+        "BeingCrucified",
+        "IsCrucified"
+    }
+
+    for _, name in ipairs(attributes) do
+        if Entity:GetAttribute(name) == true then
+            return true
+        end
+    end
+
+    for _, v in ipairs(Entity:GetDescendants()) do
+        for _, name in ipairs(attributes) do
+            if v:GetAttribute(name) == true then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+-- Wait until Room 50
+while Entity.Parent and roomNumber() < ROOM do
+    RunService.Heartbeat:Wait()
+end
+
+if not Entity.Parent or roomNumber() >= NEXT_ROOM then
+    destroy()
+    return
+end
+
+-- Wait 15 seconds after entering Room 50
+local startTime = os.clock()
+
+while Entity.Parent and os.clock() - startTime < START_DELAY do
+    if roomNumber() >= NEXT_ROOM then
+        destroy()
+        return
+    end
+
+    RunService.Heartbeat:Wait()
+end
+
+if not Entity.Parent or roomNumber() ~= ROOM then
+    destroy()
+    return
+end
+
+-- Find Room 50
+local Rooms = Workspace:WaitForChild("CurrentRooms", 10)
+local Room50 = Rooms and Rooms:FindFirstChild("50")
+
+if not Room50 then
+    warn("Common Sense: Room 50 not found")
+    destroy()
+    return
+end
+
+local Figure = Room50:FindFirstChild("FigureRig", true)
+    or Room50:FindFirstChild("Figure", true)
+
+local Folder = Figure
+    and Figure:FindFirstChild("PathfindNodes", true)
+
+Folder = Folder or Room50:FindFirstChild("PathfindNodes", true)
+
+if not Folder then
+    warn("Common Sense: PathfindNodes not found")
+    destroy()
+    return
+end
+
+local RoomCF, RoomSize = Room50:GetBoundingBox()
+
+local function inside(pos)
+    local p = RoomCF:PointToObjectSpace(pos)
+
+    return math.abs(p.X) <= RoomSize.X / 2 + 2
+        and math.abs(p.Y) <= RoomSize.Y / 2 + 2
+        and math.abs(p.Z) <= RoomSize.Z / 2 + 2
+end
+
+local Nodes = {}
+
+for _, v in ipairs(Folder:GetDescendants()) do
+    if v:IsA("BasePart") and inside(v.Position) then
+        table.insert(Nodes, v)
+    end
+end
+
+local function nodeNumber(v)
+    return tonumber(v.Name:match("%d+")) or math.huge
+end
+
+table.sort(Nodes, function(a, b)
+    local A, B = nodeNumber(a), nodeNumber(b)
+
+    if A == B then
+        return a.Name < b.Name
+    end
+
+    return A < B
+end)
+
+if #Nodes == 0 then
+    warn("Common Sense: No valid path nodes")
+    destroy()
+    return
+end
+
+-- Start from nearest node
+local index = 1
+local nearest = math.huge
+local startPos = Entity:GetPivot().Position
+
+for i, node in ipairs(Nodes) do
+    local distance = (node.Position - startPos).Magnitude
+
+    if distance < nearest then
+        nearest = distance
+        index = i
+    end
+end
+
+local function moveTo(pos)
+    if not inside(pos) then
+        return false
+    end
+
+    while Entity.Parent do
+        if roomNumber() >= NEXT_ROOM then
+            destroy()
+            return false
+        end
+
+        if crucified() then
+            RunService.Heartbeat:Wait()
+            continue
+        end
+
+        if Entity:GetAttribute("NoAI") then
+            RunService.Heartbeat:Wait()
+            continue
+        end
+
+        local current = Entity:GetPivot().Position
+        local delta = pos - current
+        local distance = delta.Magnitude
+
+        if distance <= NODE_DISTANCE then
+            return true
+        end
+
+        RunService.Heartbeat:Wait()
+
+        local dt = RunService.Heartbeat:Wait()
+        local direction = delta.Unit
+        local newPos = current
+            + direction * math.min(SPEED * dt, distance)
+
+        if not inside(newPos) then
+            return false
+        end
+
+        local flat = Vector3.new(direction.X, 0, direction.Z)
+
+        if flat.Magnitude > 0.01 then
+            Entity:PivotTo(
+                CFrame.lookAt(newPos, newPos + flat.Unit)
+            )
+        else
+            Entity:PivotTo(CFrame.new(newPos))
+        end
+    end
+
+    return false
+end
+
+-- Cleanup on Room 51
+LatestRoom:GetPropertyChangedSignal("Value"):Connect(function()
+    if roomNumber() >= NEXT_ROOM then
+        destroy()
+    end
+end)
+
+-- Activate AI
+Entity:SetAttribute("NoAI", false)
+
+-- Damage nearby players
+task.spawn(function()
+    while Entity.Parent do
+        RunService.Heartbeat:Wait()
+
+        if roomNumber() >= NEXT_ROOM then
+            destroy()
+            return
+        end
+
+        if crucified() or Entity:GetAttribute("NoAI") then
+            continue
+        end
+
+        local character = Player and Player.Character
+        local humanoid = character
+            and character:FindFirstChildOfClass("Humanoid")
+        local playerRoot = character
+            and character:FindFirstChild("HumanoidRootPart")
+
+        if humanoid and playerRoot
+            and humanoid.Health > 0
+            and character:GetAttribute("Hiding") ~= true then
+
+            local distance = (
+                Entity:GetPivot().Position - playerRoot.Position
+            ).Magnitude
+
+            if distance <= KILL_RANGE then
+                humanoid:TakeDamage(DAMAGE)
+                task.wait(1)
+            end
+        end
+    end
+end)
+
+-- Patrol path in both directions
+task.spawn(function()
+    while Entity.Parent do
+        if roomNumber() >= NEXT_ROOM then
+            destroy()
+            return
+        end
+
+        if not crucified() then
+            for i = index, #Nodes do
+                if not Entity.Parent or roomNumber() >= NEXT_ROOM then
+                    destroy()
+                    return
+                end
+
+                if crucified() then
+                    break
+                end
+
+                moveTo(Nodes[i].Position)
+            end
+        end
+
+        for i = #Nodes - 1, 1, -1 do
+            if not Entity.Parent or roomNumber() >= NEXT_ROOM then
+                destroy()
+                return
+            end
+
+            if crucified() then
+                break
+            end
+
+            moveTo(Nodes[i].Position)
+        end
+
+        local position = Entity:GetPivot().Position
+        local bestDistance = math.huge
+
+        for i, node in ipairs(Nodes) do
+            local distance = (node.Position - position).Magnitude
+
+            if distance < bestDistance then
+                bestDistance = distance
+                index = i
+            end
+        end
+    end
+end)
