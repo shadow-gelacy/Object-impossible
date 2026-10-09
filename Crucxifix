@@ -1,1393 +1,427 @@
---// CUSTOM CRUCIFIX
---// TABLE / DRAWER / CHEST
---// CURRENT ROOM + NEXT 4 ROOMS SPAWN
---// ORIGINAL CRUCIFIX EFFECT + ENTITY COLORS + CUSTOM SOUND
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RS = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local MainUI =
-	PlayerGui:WaitForChild("MainUI")
-local MainGame =
-	require(
-		MainUI:WaitForChild("Initiator"):WaitForChild("Main_Game")
-	)
-local Camera = Workspace.CurrentCamera
---==================================================
--- CONFIG
---==================================================
-local CRUCIFIX_ASSET =
-	"rbxassetid://12849323184"
-local CUSTOM_SOUND_FILE =
-	"custom_crucifix_sound.mp3"
-local CUSTOM_SOUND_URL =
-	"https://raw.githubusercontent.com/shadow-gelacy/Object-impossible/main/stress.mp3"
-local MIN_ROOM = 0
-local MAX_ROOM = 100
-local SPAWN_CHANCE = 100
-local CRUCIFIX_RANGE = 70
-local PROMPT_RANGE = 7
-local PROMPT_HOLD = 0
--- Current room + next 4 rooms
-local MAX_FORWARD_ROOMS = 4
-local LOCATIONS = {
-	Drawers = true,
-	Tables = true,
-	Chests = true,
-	Floor = false
-}
---==================================================
--- CHARACTER
---==================================================
-local Character =
-	LocalPlayer.Character
-	or LocalPlayer.CharacterAdded:Wait()
-LocalPlayer.CharacterAdded:Connect(function(char)
-	Character = char
+
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local MainGame = require(PlayerGui:WaitForChild("MainUI"):WaitForChild("Initiator"):WaitForChild("Main_Game"))
+local CameraShaker = require(RS:WaitForChild("CameraShaker"))
+
+local CameraShake = CameraShaker.new(Enum.RenderPriority.Camera.Value, function(cf)
+    if Workspace.CurrentCamera then
+        Workspace.CurrentCamera.CFrame *= cf
+    end
 end)
---==================================================
--- CAMERA SHAKE
---==================================================
-local CameraShaker =
-	require(
-		ReplicatedStorage:WaitForChild("CameraShaker")
-	)
-local CameraShake =
-	CameraShaker.new(
-		Enum.RenderPriority.Camera.Value,
-		function(cf)
-			local camera =
-				Workspace.CurrentCamera
-			if camera then
-				camera.CFrame =
-					camera.CFrame * cf
-			end
-		end
-	)
 CameraShake:Start()
---==================================================
--- ASSET
---==================================================
-local Asset
-local success, result =
-	pcall(function()
-		return game:GetObjects(
-			CRUCIFIX_ASSET
-		)[1]
-	end)
-if not success or not result then
-	warn("[Crucifix] Failed to load asset")
-	return
+
+local ASSET = "rbxassetid://12849323184"
+local SOUND_URL = "https://raw.githubusercontent.com/shadow-gelacy/Object-impossible/main/stress.mp3"
+local MIN_ROOM, MAX_ROOM = 0, 100
+local SPAWN_CHANCE = 100
+local RANGE, PROMPT_RANGE = 70, 7
+local MAX_FORWARD_ROOMS = 4
+
+local LOCATIONS = {Drawers = true, Tables = true, Chests = true}
+local COLORS = {
+    Silence = Color3.fromRGB(224,255,255),
+    WH1T3 = Color3.fromRGB(0,0,255),
+    Smiler = Color3.fromRGB(255,0,0),
+    smiler = Color3.fromRGB(255,0,0),
+    HungerMoving = Color3.fromRGB(224,255,255),
+    ["Common Sense"] = Color3.fromRGB(224,255,255),
+    ["Dimensional Eye"] = Color3.fromRGB(255,226,136),
+    Blink = Color3.fromRGB(224,255,255)
+}
+
+local ok, asset = pcall(function()
+    return game:GetObjects(ASSET)[1]
+end)
+if not ok or not asset then return end
+
+local BaseCrucifix = asset:FindFirstChild("Crucifix", true)
+local BaseRepentance = asset:FindFirstChild("Repentance", true)
+if not BaseCrucifix or not BaseRepentance then
+    asset:Destroy()
+    return
 end
-Asset = result
-local BaseCrucifix =
-	Asset:FindFirstChild(
-		"Crucifix",
-		true
-	)
-local BaseRepentance =
-	Asset:FindFirstChild(
-		"Repentance",
-		true
-	)
-if not BaseCrucifix then
-	warn("[Crucifix] Crucifix missing")
-	Asset:Destroy()
-	return
-end
-if not BaseRepentance then
-	warn("[Crucifix] Repentance missing")
-	Asset:Destroy()
-	return
-end
---==================================================
--- CUSTOM SOUND
---==================================================
+
 local CustomSound
 pcall(function()
-	if not isfile(CUSTOM_SOUND_FILE) then
-		writefile(
-			CUSTOM_SOUND_FILE,
-			game:HttpGet(
-				CUSTOM_SOUND_URL
-			)
-		)
-	end
-	CustomSound =
-		getcustomasset(
-			CUSTOM_SOUND_FILE
-		)
+    if not isfile("custom_crucifix_sound.mp3") then
+        writefile("custom_crucifix_sound.mp3", game:HttpGet(SOUND_URL))
+    end
+    CustomSound = getcustomasset("custom_crucifix_sound.mp3")
 end)
---==================================================
--- ENTITY COLORS
---==================================================
-local function GetEntityColor(
-	entityName,
-	entity
-)
-	if entity then
-		local customColor =
-			entity:GetAttribute(
-				"CrucifixColor"
-			)
-		if typeof(customColor) == "Color3" then
-			return customColor
-		end
-	end
-	if entityName == "Silence" then
-		return Color3.fromRGB(
-			255,
-			255,
-			255
-		)
-	elseif entityName == "WH1T3" then
-		return Color3.fromRGB(
-			0,
-			0,
-			255
-		)
-	elseif entityName == "Smiler"
-		or entityName == "smiler" then
-		return Color3.fromRGB(
-			255,
-			0,
-			0
-		)
-	elseif entityName == "HungerMoving" then
-		return Color3.fromRGB(
-			59,
-			6,
-			6
-		)
-	elseif entityName == "Common Sense" then
-		return Color3.fromRGB(
-			117,
-			117,
-			117
-		)
-	elseif entityName == "Dimensional Eye" then
-		return Color3.fromRGB(
-			31,
-			29,
-			43
-		)
-	elseif entityName == "Blink" then
-		return Color3.fromRGB(
-			216,
-			0,
-			240
-		)
-	end
-	return Color3.fromRGB(
-		255,
-		255,
-		255
-	)
+
+local function MainPart(obj)
+    if obj:IsA("BasePart") then return obj end
+    if obj:IsA("Tool") then
+        return obj:FindFirstChild("Handle", true)
+    end
+    if obj:IsA("Model") and obj.PrimaryPart then
+        return obj.PrimaryPart
+    end
+    return obj:FindFirstChild("Handle", true)
+        or obj:FindFirstChildWhichIsA("BasePart", true)
 end
---==================================================
--- COLOR REPENTANCE
---==================================================
-local function ColorRepentance(
-	model,
-	color
-)
-	for _, obj in ipairs(
-		model:GetDescendants()
-	) do
-		if obj:IsA("BasePart") then
-			obj.Color = color
-		elseif obj:IsA("Light") then
-			obj.Color = color
-		elseif obj:IsA("ParticleEmitter") then
-			obj.Color =
-				ColorSequence.new(color)
-		elseif obj:IsA("Beam") then
-			obj.Color =
-				ColorSequence.new(color)
-		end
-	end
+
+local function Pivot(obj, cf)
+    if obj:IsA("Model") then
+        obj:PivotTo(cf)
+    elseif obj:IsA("BasePart") then
+        obj.CFrame = cf
+    elseif obj:IsA("Tool") then
+        local part = MainPart(obj)
+        if part then part.CFrame = cf end
+    end
 end
---==================================================
--- MAIN PART
---==================================================
-local function GetMainPart(
-	object
-)
-	if object:IsA("BasePart") then
-		return object
-	end
-	if object:IsA("Tool") then
-		return object:FindFirstChild(
-			"Handle",
-			true
-		)
-	end
-	if object:IsA("Model") then
-		if object.PrimaryPart then
-			return object.PrimaryPart
-		end
-		local handle =
-			object:FindFirstChild(
-				"Handle",
-				true
-			)
-		if handle then
-			return handle
-		end
-	end
-	return object:FindFirstChildWhichIsA(
-		"BasePart",
-		true
-	)
+
+local function ColorModel(model, color)
+    for _, obj in ipairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Light") then
+            obj.Color = color
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Beam") then
+            obj.Color = ColorSequence.new(color)
+        end
+    end
 end
---==================================================
--- PIVOT
---==================================================
-local function PivotObject(
-	object,
-	cf
-)
-	if object:IsA("Model") then
-		object:PivotTo(cf)
-	elseif object:IsA("Tool") then
-		local handle =
-			object:FindFirstChild(
-				"Handle",
-				true
-			)
-		if handle then
-			handle.CFrame = cf
-		end
-	elseif object:IsA("BasePart") then
-		object.CFrame = cf
-	end
+
+local function AddLights(obj)
+    local part = MainPart(obj)
+    if not part then return end
+
+    for _, data in ipairs({
+        {"InnerRedLight", Color3.fromRGB(255,0,0), 10, 1},
+        {"OuterCyanLight", Color3.fromRGB(0,255,255), 3, 10}
+    }) do
+        local light = part:FindFirstChild(data[1]) or Instance.new("PointLight")
+        light.Name, light.Color = data[1], data[2]
+        light.Brightness, light.Range = data[3], data[4]
+        light.Shadows, light.Parent = false, part
+    end
 end
---==================================================
--- PICKUP LIGHTS
---==================================================
-local function AddPickupLights(
-	object
-)
-	local main =
-		GetMainPart(object)
-	if not main then
-		return
-	end
-	local red =
-		main:FindFirstChild(
-			"InnerRedLight"
-		)
-	if not red then
-		red =
-			Instance.new(
-				"PointLight"
-			)
-		red.Name =
-			"InnerRedLight"
-		red.Parent =
-			main
-	end
-	red.Color =
-		Color3.fromRGB(
-			255,
-			0,
-			0
-		)
-	red.Brightness = 10
-	red.Range = 1
-	red.Shadows = false
-	red.Enabled = true
-	local cyan =
-		main:FindFirstChild(
-			"OuterCyanLight"
-		)
-	if not cyan then
-		cyan =
-			Instance.new(
-				"PointLight"
-			)
-		cyan.Name =
-			"OuterCyanLight"
-		cyan.Parent =
-			main
-	end
-	cyan.Color =
-		Color3.fromRGB(
-			0,
-			255,
-			255
-		)
-	cyan.Brightness = 3
-	cyan.Range = 10
-	cyan.Shadows = false
-	cyan.Enabled = true
+
+local function RemoveLights(obj)
+    for _, v in ipairs(obj:GetDescendants()) do
+        if v:IsA("PointLight") and (v.Name == "InnerRedLight" or v.Name == "OuterCyanLight") then
+            v:Destroy()
+        end
+    end
 end
-local function RemovePickupLights(
-	object
-)
-	for _, obj in ipairs(
-		object:GetDescendants()
-	) do
-		if obj:IsA("PointLight")
-			and (
-				obj.Name ==
-					"InnerRedLight"
-				or obj.Name ==
-					"OuterCyanLight"
-			) then
-			obj:Destroy()
-		end
-	end
+
+local function CurrentRoom()
+    local rooms = Workspace:FindFirstChild("CurrentRooms")
+    local char = Player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not rooms or not root then return nil end
+
+    local nearest, distance = nil, math.huge
+    for _, room in ipairs(rooms:GetChildren()) do
+        if tonumber(room.Name) then
+            local ok, cf, size = pcall(function()
+                local c, s = room:GetBoundingBox()
+                return c, s
+            end)
+            if ok and cf and size then
+                local p = cf:PointToObjectSpace(root.Position)
+                if math.abs(p.X) <= size.X/2 and math.abs(p.Z) <= size.Z/2 then
+                    return room
+                end
+                local d = (Vector3.new(root.Position.X,0,root.Position.Z)
+                    - Vector3.new(cf.Position.X,0,cf.Position.Z)).Magnitude
+                if d < distance then nearest, distance = room, d end
+            end
+        end
+    end
+    return nearest
 end
---==================================================
--- ROOM LOCATIONS
---==================================================
-local function GetRoomLocations(
-	room
-)
-	local locations = {}
-	for _, desc in ipairs(
-		room:GetDescendants()
-	) do
-		if not desc:IsA("Model") then
-			continue
-		end
-		local main =
-			desc:FindFirstChild(
-				"Main"
-			)
-		if not main
-			or not main:IsA("BasePart") then
-			continue
-		end
-		if desc.Name ==
-			"DrawerContainer"
-			and LOCATIONS.Drawers then
-			table.insert(
-				locations,
-				{
-					Part = main,
-					CFrame =
-						main.CFrame
-						* CFrame.new(
-							0,
-							0.15,
-							0
-						),
-					Type = "Drawer"
-				}
-			)
-		elseif desc.Name ==
-			"Table"
-			and LOCATIONS.Tables then
-			table.insert(
-				locations,
-				{
-					Part = main,
-					CFrame =
-						main.CFrame
-						* CFrame.new(
-							0,
-							main.Size.Y / 2
-								+ 0.15,
-							0
-						),
-					Type = "Table"
-				}
-			)
-		elseif desc.Name:lower():find(
-			"chest"
-		)
-			and LOCATIONS.Chests then
-			table.insert(
-				locations,
-				{
-					Part = main,
-					CFrame =
-						main.CFrame
-						* CFrame.new(
-							0,
-							0.15,
-							0
-						),
-					Type = "Chest"
-				}
-			)
-		end
-	end
-	return locations
+
+local function FindSpawn()
+    local rooms = Workspace:FindFirstChild("CurrentRooms")
+    local current = CurrentRoom()
+    if not rooms or not current then return end
+
+    local currentNumber = tonumber(current.Name)
+    if not currentNumber then return end
+
+    for offset = 0, MAX_FORWARD_ROOMS do
+        local number = currentNumber + offset
+        if number >= MIN_ROOM and number <= MAX_ROOM then
+            local room = rooms:FindFirstChild(tostring(number))
+            if not room then
+                for _ = 1, 20 do
+                    task.wait(.25)
+                    room = rooms:FindFirstChild(tostring(number))
+                    if room then break end
+                end
+            end
+
+            if room then
+                local choices = {}
+                for _, obj in ipairs(room:GetDescendants()) do
+                    if obj:IsA("Model") then
+                        local main = obj:FindFirstChild("Main")
+                        if main and main:IsA("BasePart") then
+                            if obj.Name == "DrawerContainer" and LOCATIONS.Drawers then
+                                table.insert(choices, {Part=main, CF=main.CFrame*CFrame.new(0,.15,0), Type="Drawer"})
+                            elseif obj.Name == "Table" and LOCATIONS.Tables then
+                                table.insert(choices, {Part=main, CF=main.CFrame*CFrame.new(0,main.Size.Y/2+.15,0), Type="Table"})
+                            elseif obj.Name:lower():find("chest") and LOCATIONS.Chests then
+                                table.insert(choices, {Part=main, CF=main.CFrame*CFrame.new(0,.15,0), Type="Chest"})
+                            end
+                        end
+                    end
+                end
+                if #choices > 0 then
+                    return room, choices[math.random(1,#choices)]
+                end
+            end
+        end
+    end
 end
---==================================================
--- FIND CURRENT PLAYER ROOM
---==================================================
-local function GetCurrentPlayerRoom()
-	local rooms =
-		Workspace:FindFirstChild(
-			"CurrentRooms"
-		)
-	if not rooms then
-		return nil
-	end
-	local character =
-		LocalPlayer.Character
-	local root =
-		character
-		and character:FindFirstChild(
-			"HumanoidRootPart"
-		)
-	if root then
-		local closestRoom
-		local closestDistance =
-			math.huge
-		for _, room in ipairs(
-			rooms:GetChildren()
-		) do
-			local roomNumber =
-				tonumber(room.Name)
-			if roomNumber then
-				local cf, size
-				pcall(function()
-					cf, size =
-						room:GetBoundingBox()
-				end)
-				if cf and size then
-					local pos =
-						root.Position
-					local minX =
-						cf.Position.X
-						- size.X / 2
-					local maxX =
-						cf.Position.X
-						+ size.X / 2
-					local minZ =
-						cf.Position.Z
-						- size.Z / 2
-					local maxZ =
-						cf.Position.Z
-						+ size.Z / 2
-					local inside =
-						pos.X >= minX
-						and pos.X <= maxX
-						and pos.Z >= minZ
-						and pos.Z <= maxZ
-					if inside then
-						return room
-					end
-					local distance =
-						(
-							Vector3.new(
-								pos.X,
-								0,
-								pos.Z
-							)
-							-
-							Vector3.new(
-								cf.Position.X,
-								0,
-								cf.Position.Z
-							)
-						).Magnitude
-					if distance < closestDistance then
-						closestDistance =
-							distance
-						closestRoom =
-							room
-					end
-				end
-			end
-		end
-		if closestRoom then
-			return closestRoom
-		end
-	end
-	-- Fallback LatestRoom
-	local gameData =
-		ReplicatedStorage:FindFirstChild(
-			"GameData"
-		)
-	if gameData then
-		local latestRoom =
-			gameData:FindFirstChild(
-				"LatestRoom"
-			)
-		if latestRoom then
-			local room =
-				rooms:FindFirstChild(
-					tostring(
-						latestRoom.Value
-					)
-				)
-			if room then
-				return room
-			end
-		end
-	end
-	return nil
+
+local function FindEntity()
+    local char = Player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local nearest, best = nil, RANGE
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            local name = obj:GetAttribute("EntityName") or obj.Name
+            local compatible = obj:GetAttribute("CrucifixCompatible") == true
+                or obj:GetAttribute("CanBeCrucified") == true
+                or obj:GetAttribute("IsCustomEntity") == true
+                or COLORS[name] ~= nil
+
+            if compatible and not obj:GetAttribute("GoingToHell") then
+                local part = MainPart(obj)
+                if part then
+                    local d = (root.Position-part.Position).Magnitude
+                    if d < best then nearest, best = obj, d end
+                end
+            end
+        end
+    end
+    return nearest
 end
---==================================================
--- FIND SPAWN LOCATION
--- CURRENT ROOM + NEXT 4 ONLY
---==================================================
-local function FindSpawnLocation()
-	local rooms =
-		Workspace:FindFirstChild(
-			"CurrentRooms"
-		)
-	if not rooms then
-		return nil
-	end
-	local currentRoom =
-		GetCurrentPlayerRoom()
-	if not currentRoom then
-		return nil
-	end
-	local currentNumber =
-		tonumber(
-			currentRoom.Name
-		)
-	if not currentNumber then
-		return nil
-	end
-	-- Current room + 4 next rooms
-	for offset = 0, MAX_FORWARD_ROOMS do
-		local roomNumber =
-			currentNumber + offset
-		if roomNumber < MIN_ROOM
-			or roomNumber > MAX_ROOM then
-			continue
-		end
-		local room =
-			rooms:FindFirstChild(
-				tostring(roomNumber)
-			)
-		-- Wait for room generation
-		if not room then
-			for _ = 1, 20 do
-				task.wait(0.25)
-				room =
-					rooms:FindFirstChild(
-						tostring(roomNumber)
-					)
-				if room then
-					break
-				end
-			end
-		end
-		if room then
-			local locations =
-				GetRoomLocations(
-					room
-				)
-			if #locations > 0 then
-				local location =
-					locations[
-						math.random(
-							1,
-							#locations
-						)
-					]
-				print(
-					"[Crucifix] Spawned | Room "
-					.. room.Name
-					.. " | "
-					.. location.Type
-				)
-				return room, location
-			end
-		end
-	end
-	warn(
-		"[Crucifix] No Drawer/Table/Chest found in current room + next 4 rooms"
-	)
-	return nil
+
+local function Banish(model)
+    if not model or not model.Parent then return end
+
+    local name = model:GetAttribute("EntityName") or model.Name
+    local color = model:GetAttribute("CrucifixColor")
+    if typeof(color) ~= "Color3" then
+        color = COLORS[name] or Color3.new(1,1,1)
+    end
+
+    local fake = model:Clone()
+    fake.Name = "Fake"..name
+    fake.Parent = Workspace
+    model:Destroy()
+
+    local part = MainPart(fake)
+    if not part then fake:Destroy() return end
+
+    for _, obj in ipairs(fake:GetDescendants()) do
+        if obj:IsA("Sound") then obj:Stop(); obj.Volume = 0 end
+        if obj:IsA("BasePart") then obj.Anchored = true end
+    end
+
+    local effect = BaseRepentance:Clone()
+    effect.Parent = Workspace
+    ColorModel(effect, color)
+
+    local pentagram = effect:FindFirstChild("Pentagram")
+    local glow = effect:FindFirstChild("Glow", true)
+    local crucifix = effect:FindFirstChild("Crucifix", true)
+    local entity = effect:FindFirstChild("Entity", true)
+
+    if not pentagram or not glow or not crucifix then
+        effect:Destroy()
+        fake:Destroy()
+        return
+    end
+
+    local char = Player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {char, fake, effect}
+
+    local hit = Workspace:Raycast(part.Position, Vector3.new(0,-20,0), params)
+    effect:PivotTo(hit and CFrame.new(hit.Position) or part.CFrame)
+
+    if root then crucifix:PivotTo(root.CFrame*CFrame.new(0,3.5,-6)) end
+
+    local sound = glow:FindFirstChild("Sound")
+    if sound then sound:Play() end
+
+    local bodyAngular = glow:FindFirstChild("BodyAngularVelocity")
+    local bodyPosition = glow:FindFirstChild("BodyPosition")
+    if bodyAngular then bodyAngular.AngularVelocity = Vector3.zero end
+    if bodyPosition and root then bodyPosition.Position = (root.CFrame*CFrame.new(0,3.5,-6)).Position end
+
+    CameraShake:ShakeOnce(10,15,4,5)
+
+    if CustomSound then
+        local s = Instance.new("Sound")
+        s.SoundId, s.Volume, s.Parent = CustomSound, 7, Workspace
+        s:Play()
+        s.Ended:Connect(function() s:Destroy() end)
+    end
+
+    task.spawn(function()
+        local circle = pentagram:FindFirstChild("Circle")
+        if circle then
+            TweenService:Create(circle, TweenInfo.new(1,Enum.EasingStyle.Quad,Enum.EasingDirection.Out), {
+                Position=circle.Position-Vector3.new(0,7.5,0)
+            }):Play()
+            task.wait(1)
+            circle.Anchored = false
+        end
+        if bodyAngular then
+            TweenService:Create(bodyAngular,TweenInfo.new(2.5),{AngularVelocity=Vector3.new(0,30,0)}):Play()
+            task.wait(4)
+            TweenService:Create(bodyAngular,TweenInfo.new(1.5),{AngularVelocity=Vector3.zero}):Play()
+        end
+    end)
+
+    task.spawn(function()
+        task.wait(1.5)
+        for _, obj in ipairs(fake:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                TweenService:Create(obj,TweenInfo.new(1.5,Enum.EasingStyle.Back,Enum.EasingDirection.In),{
+                    Position=obj.Position+Vector3.new(0,3.5,0)
+                }):Play()
+            end
+        end
+        if entity and entity:IsA("BasePart") then
+            TweenService:Create(entity,TweenInfo.new(1.5),{Position=entity.Position+Vector3.new(0,3.5,0)}):Play()
+        end
+        task.wait(1.5)
+        for _, obj in ipairs(fake:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                TweenService:Create(obj,TweenInfo.new(2),{Position=obj.Position-Vector3.new(0,50,0)}):Play()
+            elseif obj:IsA("Sound") then
+                TweenService:Create(obj,TweenInfo.new(1),{Volume=0}):Play()
+            end
+        end
+        if entity and entity:IsA("BasePart") then
+            TweenService:Create(entity,TweenInfo.new(2),{Position=entity.Position-Vector3.new(0,50,0)}):Play()
+        end
+    end)
+
+    task.spawn(function()
+        task.wait(.5)
+        local light = pentagram:FindFirstChild("LightBright",true)
+        if light and light:IsA("Light") then
+            TweenService:Create(light,TweenInfo.new(2),{Range=30,Brightness=5}):Play()
+            task.wait(1.75)
+            TweenService:Create(light,TweenInfo.new(4),{Range=1,Brightness=0}):Play()
+        end
+    end)
+
+    task.wait(6.5)
+    local light = glow:FindFirstChild("Light")
+    if light and light:IsA("Light") then light.Enabled = false end
+
+    TweenService:Create(glow,TweenInfo.new(1),{Size=glow.Size*3.5}):Play()
+    TweenService:Create(glow,TweenInfo.new(1.25),{Transparency=1}):Play()
+
+    local particle = glow:FindFirstChild("ExplodeParticle")
+    if particle and particle:IsA("ParticleEmitter") then particle:Emit(50) end
+
+    CameraShake:ShakeOnce(3,10,.7,.5)
+    task.wait(2.5)
+    effect:Destroy()
+    fake:Destroy()
 end
---==================================================
--- ENTITY SEARCH
---==================================================
-local function FindNearestEntity()
-	local character =
-		LocalPlayer.Character
-	local root =
-		character
-		and character:FindFirstChild(
-			"HumanoidRootPart"
-		)
-	if not root then
-		return nil
-	end
-	local nearest
-	local nearestDistance =
-		CRUCIFIX_RANGE
-	for _, object in ipairs(
-		Workspace:GetDescendants()
-	) do
-		if not object:IsA("Model") then
-			continue
-		end
-		local entityName =
-			object:GetAttribute(
-				"EntityName"
-			)
-			or object.Name
-		local known =
-			entityName == "Silence"
-			or entityName == "WH1T3"
-			or entityName == "Smiler"
-			or entityName == "smiler"
-			or entityName == "HungerMoving"
-			or entityName == "Common Sense"
-			or entityName == "Dimensional Eye"
-			or entityName == "Blink"
-		local compatible =
-			object:GetAttribute(
-				"CrucifixCompatible"
-			) == true
-		local custom =
-			object:GetAttribute(
-				"IsCustomEntity"
-			) == true
-		local canCrucify =
-			object:GetAttribute(
-				"CanBeCrucified"
-			) == true
-		if not (
-			known
-			or compatible
-			or custom
-			or canCrucify
-		) then
-			continue
-		end
-		if object:GetAttribute(
-			"GoingToHell"
-		) then
-			continue
-		end
-		local primary =
-			object.PrimaryPart
-			or object:FindFirstChild(
-				"HumanoidRootPart",
-				true
-			)
-			or object:FindFirstChildWhichIsA(
-				"BasePart",
-				true
-			)
-		if not primary then
-			continue
-		end
-		local distance =
-			(
-				root.Position
-				- primary.Position
-			).Magnitude
-		if distance <
-			nearestDistance then
-			nearest =
-				object
-			nearestDistance =
-				distance
-		end
-	end
-	return nearest
+
+local function SetupCrucifix(tool)
+    local active, used = false, false
+    local connection
+
+    tool.Equipped:Connect(function()
+        if used then return end
+        active = true
+        if connection then connection:Disconnect() end
+
+        connection = RunService.Heartbeat:Connect(function()
+            if not active or used or not tool.Parent then return end
+            local entity = FindEntity()
+            if not entity then return end
+
+            used, active = true, false
+            connection:Disconnect()
+            connection = nil
+            entity:SetAttribute("GoingToHell",true)
+            tool:Destroy()
+            task.spawn(Banish,entity)
+        end)
+    end)
+
+    tool.Unequipped:Connect(function()
+        active = false
+        if connection then connection:Disconnect(); connection=nil end
+    end)
 end
---==================================================
--- CRUCIFIX EFFECT
---==================================================
-local function HellModel(
-	Model
-)
-	if not Model then
-		return
-	end
-	local fake =
-		Model:Clone()
-	fake.Name =
-		"Fake" .. Model.Name
-	fake.Parent =
-		Workspace
-	Model:Destroy()
-	local PrimaryPart =
-		fake.PrimaryPart
-		or fake:FindFirstChild(
-			"HumanoidRootPart",
-			true
-		)
-		or fake:FindFirstChildWhichIsA(
-			"BasePart",
-			true
-		)
-	if not PrimaryPart then
-		fake:Destroy()
-		return
-	end
-	-- Stop entity sounds
-	for _, obj in ipairs(
-		fake:GetDescendants()
-	) do
-		if obj:IsA("Sound") then
-			obj:Stop()
-			obj.Volume = 0
-		end
-	end
-	local entityName =
-		Model:GetAttribute(
-			"EntityName"
-		)
-		or Model.Name
-	local entityColor =
-		GetEntityColor(
-			entityName,
-			Model
-		)
-	local Repentance =
-		BaseRepentance:Clone()
-	Repentance.Parent =
-		Workspace
-	ColorRepentance(
-		Repentance,
-		entityColor
-	)
-	local Pentagram =
-		Repentance:FindFirstChild(
-			"Pentagram"
-		)
-	local Glow =
-		Repentance:FindFirstChild(
-			"Glow",
-			true
-		)
-	local RepentanceCrucifix =
-		Repentance:FindFirstChild(
-			"Crucifix",
-			true
-		)
-	local Entity =
-		Repentance:FindFirstChild(
-			"Entity",
-			true
-		)
-	if not Pentagram
-		or not Glow
-		or not RepentanceCrucifix then
-		Repentance:Destroy()
-		fake:Destroy()
-		return
-	end
-	-- Floor raycast
-	local RayParams =
-		RaycastParams.new()
-	RayParams.FilterType =
-		Enum.RaycastFilterType.Exclude
-	RayParams.FilterDescendantsInstances = {
-		Character,
-		fake,
-		Repentance
-	}
-	local RayResult =
-		Workspace:Raycast(
-			PrimaryPart.Position,
-			Vector3.new(
-				0,
-				-20,
-				0
-			),
-			RayParams
-		)
-	if RayResult then
-		local FloorPart =
-			Instance.new("Part")
-		FloorPart.Anchored =
-			true
-		FloorPart.Transparency =
-			1
-		FloorPart.CanCollide =
-			false
-		FloorPart.Position =
-			RayResult.Position
-			+ Vector3.new(
-				0,
-				1,
-				0
-			)
-		FloorPart.Parent =
-			Workspace
-		Repentance:PivotTo(
-			FloorPart.CFrame
-			* CFrame.new(
-				0,
-				-0.5,
-				0
-			)
-		)
-		FloorPart:Destroy()
-	else
-		Repentance:PivotTo(
-			PrimaryPart.CFrame
-		)
-	end
-	-- Anchor entity
-	for _, obj in ipairs(
-		fake:GetDescendants()
-	) do
-		if obj:IsA("BasePart") then
-			obj.Anchored = true
-		end
-	end
-	local character =
-		LocalPlayer.Character
-	local root =
-		character
-		and character:FindFirstChild(
-			"HumanoidRootPart"
-		)
-	if root then
-		RepentanceCrucifix:PivotTo(
-			root.CFrame
-			* CFrame.new(
-				0,
-				3.5,
-				-6
-			)
-		)
-	end
-	-- Glow
-	Glow.Anchored = false
-	local sound =
-		Glow:FindFirstChild(
-			"Sound"
-		)
-	if sound then
-		sound:Play()
-	end
-	local bodyAngular =
-		Glow:FindFirstChild(
-			"BodyAngularVelocity"
-		)
-	local bodyPosition =
-		Glow:FindFirstChild(
-			"BodyPosition"
-		)
-	if bodyAngular then
-		bodyAngular.AngularVelocity =
-			Vector3.zero
-	end
-	if bodyPosition and root then
-		bodyPosition.Position =
-			(
-				root.CFrame
-				* CFrame.new(
-					0,
-					3.5,
-					-6
-				)
-			).Position
-	end
-	-- Camera shake
-	CameraShake:ShakeOnce(
-		10,
-		15,
-		4,
-		5
-	)
-	-- Custom sound
-	if CustomSound then
-		local custom =
-			Instance.new("Sound")
-		custom.SoundId =
-			CustomSound
-		custom.Volume = 7
-		custom.Parent =
-			Workspace
-		custom:Play()
-		custom.Ended:Connect(
-			function()
-				if custom.Parent then
-					custom:Destroy()
-				end
-			end
-		)
-	end
-	-- Pentagram
-	task.spawn(function()
-		local circle =
-			Pentagram:FindFirstChild(
-				"Circle"
-			)
-		if not circle then
-			return
-		end
-		TweenService:Create(
-			circle,
-			TweenInfo.new(
-				1,
-				Enum.EasingStyle.Quad,
-				Enum.EasingDirection.Out
-			),
-			{
-				Position =
-					circle.Position
-					- Vector3.new(
-						0,
-						7.5,
-						0
-					)
-			}
-		):Play()
-		task.wait(1)
-		circle.Anchored = false
-		if bodyAngular then
-			TweenService:Create(
-				bodyAngular,
-				TweenInfo.new(
-					2.5,
-					Enum.EasingStyle.Sine,
-					Enum.EasingDirection.In
-				),
-				{
-					AngularVelocity =
-						Vector3.new(
-							0,
-							30,
-							0
-						)
-				}
-			):Play()
-			task.wait(4)
-			TweenService:Create(
-				bodyAngular,
-				TweenInfo.new(
-					1.5,
-					Enum.EasingStyle.Sine,
-					Enum.EasingDirection.Out
-				),
-				{
-					AngularVelocity =
-						Vector3.zero
-				}
-			):Play()
-		end
-	end)
-	-- Entity animation
-	task.spawn(function()
-		task.wait(1.5)
-		if Entity then
-			TweenService:Create(
-				Entity,
-				TweenInfo.new(
-					1.5,
-					Enum.EasingStyle.Back,
-					Enum.EasingDirection.In
-				),
-				{
-					Position =
-						Entity.Position
-						+ Vector3.new(
-							0,
-							3.5,
-							0
-						)
-				}
-			):Play()
-		end
-		for _, Part in ipairs(
-			fake:GetDescendants()
-		) do
-			if Part:IsA("BasePart") then
-				TweenService:Create(
-					Part,
-					TweenInfo.new(
-						1.5,
-						Enum.EasingStyle.Back,
-						Enum.EasingDirection.In
-					),
-					{
-						Position =
-							Part.Position
-							+ Vector3.new(
-								0,
-								3.5,
-								0
-							)
-					}
-				):Play()
-			end
-		end
-		task.wait(1.5)
-		if Entity then
-			TweenService:Create(
-				Entity,
-				TweenInfo.new(
-					2,
-					Enum.EasingStyle.Quad,
-					Enum.EasingDirection.InOut
-				),
-				{
-					Position =
-						Entity.Position
-						- Vector3.new(
-							0,
-							50,
-							0
-						)
-				}
-			):Play()
-		end
-		for _, Part in ipairs(
-			fake:GetDescendants()
-		) do
-			if Part:IsA("BasePart") then
-				TweenService:Create(
-					Part,
-					TweenInfo.new(
-						2,
-						Enum.EasingStyle.Quad,
-						Enum.EasingDirection.InOut
-					),
-					{
-						Position =
-							Part.Position
-							- Vector3.new(
-								0,
-								50,
-								0
-							)
-					}
-				):Play()
-			end
-		end
-		for _, obj in ipairs(
-			fake:GetDescendants()
-		) do
-			if obj:IsA("Sound") then
-				TweenService:Create(
-					obj,
-					TweenInfo.new(
-						1,
-						Enum.EasingStyle.Quad,
-						Enum.EasingDirection.InOut
-					),
-					{
-						Volume = 0
-					}
-				):Play()
-			end
-		end
-	end)
-	-- Light
-	task.spawn(function()
-		task.wait(0.5)
-		local lightBright =
-			Pentagram:FindFirstChild(
-				"LightBright",
-				true
-			)
-		if lightBright
-			and lightBright:IsA("Light") then
-			TweenService:Create(
-				lightBright,
-				TweenInfo.new(
-					2,
-					Enum.EasingStyle.Quad,
-					Enum.EasingDirection.In
-				),
-				{
-					Range = 30,
-					Brightness = 5
-				}
-			):Play()
-			task.wait(1.75)
-			TweenService:Create(
-				lightBright,
-				TweenInfo.new(
-					4,
-					Enum.EasingStyle.Quad,
-					Enum.EasingDirection.Out
-				),
-				{
-					Range = 1,
-					Brightness = 0
-				}
-			):Play()
-		end
-	end)
-	task.wait(6.5)
-	-- Final glow
-	local glowLight =
-		Glow:FindFirstChild(
-			"Light"
-		)
-	if glowLight
-		and glowLight:IsA("Light") then
-		glowLight.Enabled =
-			false
-	end
-	TweenService:Create(
-		Glow,
-		TweenInfo.new(
-			1,
-			Enum.EasingStyle.Quad,
-			Enum.EasingDirection.Out
-		),
-		{
-			Size =
-				Glow.Size * 3.5
-		}
-	):Play()
-	TweenService:Create(
-		Glow,
-		TweenInfo.new(
-			1.25,
-			Enum.EasingStyle.Quad,
-			Enum.EasingDirection.Out
-		),
-		{
-			Transparency = 1
-		}
-	):Play()
-	local particle =
-		Glow:FindFirstChild(
-			"ExplodeParticle"
-		)
-	if particle
-		and particle:IsA(
-			"ParticleEmitter"
-		) then
-		particle:Emit(50)
-	end
-	CameraShake:ShakeOnce(
-		3,
-		10,
-		0.7,
-		0.5
-	)
-	task.wait(2.5)
-	if Repentance
-		and Repentance.Parent then
-		Repentance:Destroy()
-	end
-	if fake
-		and fake.Parent then
-		fake:Destroy()
-	end
-end
---==================================================
--- EQUIP LOGIC
---==================================================
-local function SetupCrucifix(
-	tool
-)
-	local active = false
-	local used = false
-	local connection
-	tool.Equipped:Connect(
-		function()
-			if used then
-				return
-			end
-			active = true
-			if connection then
-				connection:Disconnect()
-			end
-			connection =
-				RunService.Heartbeat:Connect(
-					function()
-						if not active
-							or used
-							or not tool.Parent then
-							return
-						end
-						local entity =
-							FindNearestEntity()
-						if not entity then
-							return
-						end
-						used = true
-						active = false
-						if connection then
-							connection:Disconnect()
-							connection = nil
-						end
-						entity:SetAttribute(
-							"GoingToHell",
-							true
-						)
-						tool:Destroy()
-						task.spawn(
-							function()
-								HellModel(
-									entity
-								)
-							end
-						)
-					end
-				)
-		end
-	)
-	tool.Unequipped:Connect(
-		function()
-			active = false
-			if connection then
-				connection:Disconnect()
-				connection = nil
-			end
-		end
-	)
-end
---==================================================
--- SPAWN CRUCIFIX
---==================================================
+
 local function SpawnCrucifix()
-	if math.random(
-		1,
-		100
-	) > SPAWN_CHANCE then
-		return
-	end
-	local room, location =
-		FindSpawnLocation()
-	if not room
-		or not location then
-		warn(
-			"[Crucifix] No valid spawn location"
-		)
-		return
-	end
-	local pickup =
-		BaseCrucifix:Clone()
-	pickup.Name =
-		"Cruxy"
-	pickup.Parent =
-		Workspace
-	-- Remove scripts/prompts
-	for _, obj in ipairs(
-		pickup:GetDescendants()
-	) do
-		if obj:IsA("Script")
-			or obj:IsA("LocalScript")
-			or obj:IsA("ModuleScript")
-			or obj:IsA("ProximityPrompt") then
-			obj:Destroy()
-		elseif obj:IsA("BasePart") then
-			obj.Anchored = true
-			obj.CanCollide = false
-			obj.CanTouch = false
-			obj.CanQuery = true
-		end
-	end
-	local pickupPart =
-		GetMainPart(
-			pickup
-		)
-	if not pickupPart then
-		pickup:Destroy()
-		return
-	end
-	local spawnCFrame =
-		location.CFrame
-		* CFrame.Angles(
-			math.rad(90),
-			0,
-			math.rad(
-				math.random(
-					0,
-					359
-				)
-			)
-		)
-	PivotObject(
-		pickup,
-		spawnCFrame
-	)
-	-- Attach to furniture
-	local weld =
-		Instance.new(
-			"WeldConstraint"
-		)
-	weld.Part0 =
-		location.Part
-	weld.Part1 =
-		pickupPart
-	weld.Parent =
-		pickupPart
-	-- Lights
-	AddPickupLights(
-		pickup
-	)
-	-- Prompt
-	local prompt =
-		Instance.new(
-			"ProximityPrompt"
-		)
-	prompt.Name =
-		"CrucifixPrompt"
-	prompt.ActionText =
-		"Pick Up"
-	prompt.ObjectText =
-		"Crucifix"
-	prompt.MaxActivationDistance =
-		PROMPT_RANGE
-	prompt.HoldDuration =
-		PROMPT_HOLD
-	prompt.RequiresLineOfSight =
-		false
-	prompt.Parent =
-		pickupPart
-	local pickedUp = false
-	prompt.Triggered:Connect(
-		function(player)
-			if pickedUp then
-				return
-			end
-			if player ~= LocalPlayer then
-				return
-			end
-			pickedUp = true
-			pickup:Destroy()
-			local tool =
-				BaseCrucifix:Clone()
-			tool.Name =
-				"Crucifix"
-			RemovePickupLights(
-				tool
-			)
-			tool.Parent =
-				LocalPlayer.Backpack
-			SetupCrucifix(
-				tool
-			)
-			pcall(function()
-				MainGame.caption(
-					"You grab the crucifix.",
-					true
-				)
-				task.wait(3)
-				MainGame.caption(
-					'It has a text on the back: "Made in China"',
-					true
-				)
-				task.wait(3)
-				MainGame.caption(
-					"It only works with custom entities.",
-					true
-				)
-			end)
-		end
-	)
-	print(
-		"[Crucifix] Spawned | Room "
-		.. room.Name
-		.. " | "
-		.. location.Type
-	)
+    if math.random(1,100) > SPAWN_CHANCE then return end
+    local room, location = FindSpawn()
+    if not room or not location then return end
+
+    local pickup = BaseCrucifix:Clone()
+    pickup.Name, pickup.Parent = "Cruxy", Workspace
+
+    for _, obj in ipairs(pickup:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") or obj:IsA("ProximityPrompt") then
+            obj:Destroy()
+        elseif obj:IsA("BasePart") then
+            obj.Anchored, obj.CanCollide, obj.CanTouch, obj.CanQuery = true, false, false, true
+        end
+    end
+
+    local part = MainPart(pickup)
+    if not part then pickup:Destroy() return end
+
+    Pivot(pickup,location.CF*CFrame.Angles(math.rad(90),0,math.rad(math.random(0,359))))
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0, weld.Part1, weld.Parent = location.Part, part, part
+    AddLights(pickup)
+
+    local prompt = Instance.new("ProximityPrompt")
+    prompt.Name, prompt.ActionText, prompt.ObjectText = "CrucifixPrompt","Pick Up","Crucifix"
+    prompt.MaxActivationDistance, prompt.HoldDuration, prompt.RequiresLineOfSight = PROMPT_RANGE,0,false
+    prompt.Parent = part
+
+    local picked = false
+    prompt.Triggered:Connect(function(player)
+        if picked or player ~= Player then return end
+        picked = true
+        pickup:Destroy()
+
+        local tool = BaseCrucifix:Clone()
+        tool.Name = "Crucifix"
+        RemoveLights(tool)
+        tool.Parent = Player:WaitForChild("Backpack")
+        SetupCrucifix(tool)
+
+        pcall(function()
+            MainGame.caption("You grab the crucifix.",true)
+            task.wait(3)
+            MainGame.caption('It has a text on the back: "Made in China"',true)
+            task.wait(3)
+            MainGame.caption("It only works with custom entities.",true)
+        end)
+    end)
+
+    print("[Crucifix] Spawned | Room "..room.Name.." | "..location.Type)
 end
---==================================================
--- START
---==================================================
-task.spawn(function()
-	task.wait(1)
-	SpawnCrucifix()
-end)
+
+task.wait(1)
+SpawnCrucifix()
