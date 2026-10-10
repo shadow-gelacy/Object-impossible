@@ -11,7 +11,7 @@ local LatestRoom = ReplicatedStorage.GameData.LatestRoom
 
 -- Execute
 MainGame.caption(
-	"Oof impossible mode v1.8 successfully loaded",
+	"Oof impossible mode v1.8 [REWORK EDITION] successfully loaded",
 	true
 )
 
@@ -29,6 +29,6 @@ task.wait(2)
 
 -- Caption cuối
 MainGame.caption(
-	"Fix entity by Samsung, Red Eyes and Zephyr",
+	"Fix entity by Samsung galacy and Zephyr",
 	true
 )
