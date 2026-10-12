@@ -341,11 +341,13 @@ local Config = {
     },
 
     Light = {
-        Flicker = {
-            Enabled = true,
-            Duration = 8
-        }
-    },
+    Flicker = {
+        Enabled = true,
+        Duration = 8,
+        MinDuration = 8,
+        MaxDuration = 8
+    }
+},
 
     Shatter = {
         Enabled = true
