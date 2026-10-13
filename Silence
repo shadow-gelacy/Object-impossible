@@ -1,0 +1,253 @@
+local P=game:GetService("Players")
+local RS=game:GetService("ReplicatedStorage")
+local W=workspace
+local plr=P.LocalPlayer
+
+local MODEL="rbxassetid://125171553498127"
+local SHATTER="rbxassetid://8828938165"
+local DAMAGE=10
+local DELAY=1
+local HEIGHT=13.5
+local CROUCH=9
+
+if _G.SilenceController then
+	_G.SilenceController.Active=false
+end
+
+local old=W:FindFirstChild("Silence")
+if old then old:Destroy() end
+
+local C={Active=true}
+_G.SilenceController=C
+
+local F
+local ok,res=pcall(function()
+	return loadstring(game:HttpGet(
+		"https://raw.githubusercontent.com/RegularVynixu/Utilities/main/Functions.lua"
+	))()
+end)
+
+if not ok or not res then
+	C.Active=false
+	return
+end
+
+F=res
+
+local silence
+ok,res=pcall(function()
+	return F.LoadCustomInstance(MODEL)
+end)
+
+if not ok or typeof(res)~="Instance" then
+	C.Active=false
+	return
+end
+
+silence=res
+
+if not silence:IsA("Model") then
+	local m=Instance.new("Model")
+	silence.Parent=m
+	silence=m
+end
+
+silence.Name="Silence"
+silence.Parent=W
+
+local root=
+	silence:FindFirstChild("HumanoidRootPart",true)
+	or silence:FindFirstChild("RootPart",true)
+	or silence:FindFirstChildWhichIsA("BasePart",true)
+
+if not root then
+	silence:Destroy()
+	C.Active=false
+	return
+end
+
+silence.PrimaryPart=root
+silence:SetAttribute("IsCustomEntity",true)
+silence:SetAttribute("CrucifixCompatible",true)
+silence:SetAttribute("CanBeCrucified",true)
+
+for _,v in ipairs(silence:GetDescendants()) do
+	if v:IsA("BasePart") then
+		v.Anchored=true
+		v.CanCollide=false
+		v.CanTouch=false
+		v.CanQuery=false
+	end
+end
+
+local rooms=W:WaitForChild("CurrentRooms",10)
+local gd=RS:FindFirstChild("GameData")
+local latest=gd and gd:FindFirstChild("LatestRoom")
+
+if not rooms then
+	silence:Destroy()
+	C.Active=false
+	return
+end
+
+local room
+local roomNumber=latest and tonumber(latest.Value)
+
+if roomNumber then
+	room=rooms:FindFirstChild(tostring(roomNumber))
+end
+
+if not room then
+	local highest=-math.huge
+	for _,r in ipairs(rooms:GetChildren()) do
+		local n=tonumber(r.Name)
+		if n and n>highest then
+			highest=n
+			room=r
+		end
+	end
+	roomNumber=room and tonumber(room.Name)
+end
+
+local pos
+
+if room then
+	local floor=room:FindFirstChild("Floor",true)
+
+	if floor and floor:IsA("BasePart") then
+		pos=floor.Position+Vector3.new(0,HEIGHT,0)
+	else
+		local cf,size=room:GetBoundingBox()
+		pos=cf.Position+Vector3.new(0,size.Y/2+5,0)
+	end
+else
+	local char=plr.Character
+	local hrp=char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		pos=hrp.Position+Vector3.new(0,HEIGHT,0)
+	end
+end
+
+if not pos then
+	silence:Destroy()
+	C.Active=false
+	return
+end
+
+silence:PivotTo(CFrame.new(pos))
+
+local function caption(t)
+	pcall(function()
+		local ui=plr.PlayerGui:FindFirstChild("MainUI")
+		local init=ui and ui:FindFirstChild("Initiator")
+		local mg=init and init:FindFirstChild("Main_Game")
+		if mg then
+			require(mg).caption(t,true)
+		end
+	end)
+end
+
+local function shatter(r)
+	if not r then return end
+
+	for i=1,3 do
+		task.delay(i*.05,function()
+			if not C.Active then return end
+
+			local s=Instance.new("Sound")
+			s.SoundId=SHATTER
+			s.Volume=.5
+			s.PlaybackSpeed=math.random(90,110)/100
+			s.Parent=W
+			s:Play()
+
+			task.delay(2,function()
+				if s then s:Destroy() end
+			end)
+		end)
+	end
+
+	for _,v in ipairs(r:GetDescendants()) do
+		if v:IsA("Light") then
+			v.Enabled=false
+		elseif v:IsA("BasePart") and
+			(v.Name=="Glow" or v.Name=="Neon" or v.Name=="LightFixture") then
+			v.Material=Enum.Material.Glass
+			v.Color=Color3.fromRGB(50,50,50)
+		end
+	end
+end
+
+shatter(room)
+
+local function crouching()
+	local char=plr.Character
+	local hum=char and char:FindFirstChildOfClass("Humanoid")
+
+	if not hum then return false end
+
+	for _,n in ipairs({
+		"Crouching",
+		"IsCrouching",
+		"Crouched",
+		"IsCrouched",
+		"Crouch"
+	}) do
+		if char:GetAttribute(n)==true
+			or hum:GetAttribute(n)==true then
+			return true
+		end
+
+		local b=char:FindFirstChild(n,true)
+		if b and b:IsA("BoolValue") and b.Value then
+			return true
+		end
+	end
+
+	return hum.WalkSpeed<=CROUCH
+end
+
+task.spawn(function()
+	while C.Active do
+		task.wait(DELAY)
+
+		if not silence.Parent then
+			C.Active=false
+			break
+		end
+
+		local char=plr.Character
+		local hum=char and char:FindFirstChildOfClass("Humanoid")
+
+		if hum and hum.Health>0 and not crouching() then
+			caption("I must crouch.")
+			hum:TakeDamage(DAMAGE)
+		end
+	end
+end)
+
+task.spawn(function()
+	while C.Active do
+		task.wait(.1)
+
+		if latest and roomNumber then
+			local n=tonumber(latest.Value)
+
+			if n and n~=roomNumber then
+				C.Active=false
+
+				if silence.Parent then
+					silence:Destroy()
+				end
+
+				break
+			end
+		end
+	end
+end)
+
+silence.AncestryChanged:Connect(function(_,parent)
+	if not parent then
+		C.Active=false
+	end
+end)
