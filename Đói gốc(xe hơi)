@@ -1,0 +1,747 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+
+local Player = Players.LocalPlayer
+
+local MODEL_ID = "rbxassetid://72195660813433"
+local SCREAM_ID = "rbxassetid://933230732"
+
+local ENTITY_NAME = "Hunger"
+local NORMAL_DAMAGE = 5
+local DAMAGE_INTERVAL = 0.2
+local OPEN_DOOR_DAMAGE = 1000
+local SOUND_VOLUME = 2
+local HEIGHT = 3
+
+local Controller = getgenv().HungerController or {}
+if Controller.Stop then
+	pcall(Controller.Stop)
+end
+
+Controller = {}
+getgenv().HungerController = Controller
+
+local Stopped = false
+local DamageRunning = false
+local ScreamRunning = false
+local SequenceRunning = false
+local HungerVisible = false
+local CrucifixActive = false
+local CrucifixFinished = false
+local CrucifixRemoving = false
+
+local Model
+local MainPart
+local CurrentRoom
+local CurrentRoomNumber
+local ScreamSound
+local RoomConnection
+local EntityConnections = {}
+
+local GameData = ReplicatedStorage:WaitForChild("GameData",10)
+local LatestRoom = GameData and GameData:WaitForChild("LatestRoom",10)
+
+local function GetRoomNumber()
+	if LatestRoom then
+		return tonumber(LatestRoom.Value)
+	end
+
+	return tonumber(game:GetAttribute("CurrentRoom"))
+end
+
+local function GetRoom(Number)
+	local rooms = Workspace:FindFirstChild("CurrentRooms")
+
+	if not rooms or not Number then
+		return nil
+	end
+
+	return rooms:FindFirstChild(tostring(Number))
+end
+
+local function GetCurrentRoom()
+	local n = GetRoomNumber()
+
+	if n then
+		local room = GetRoom(n)
+
+		if room then
+			return room
+		end
+	end
+
+	local rooms = Workspace:FindFirstChild("CurrentRooms")
+
+	if not rooms then
+		return nil
+	end
+
+	local best
+	local highest = -math.huge
+
+	for _,room in ipairs(rooms:GetChildren()) do
+		local num = tonumber(room.Name)
+
+		if num and num > highest then
+			highest = num
+			best = room
+		end
+	end
+
+	return best
+end
+
+local function GetHumanoid()
+	local char = Player.Character
+
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function GetRoot(object)
+	if not object then
+		return nil
+	end
+
+	if object:IsA("BasePart") then
+		return object
+	end
+
+	if object:IsA("Model") then
+		return object.PrimaryPart
+			or object:FindFirstChild("HumanoidRootPart",true)
+			or object:FindFirstChild("Root",true)
+			or object:FindFirstChildWhichIsA("BasePart",true)
+	end
+end
+
+local function GetRoomCenter(room)
+	if not room then
+		return nil
+	end
+
+	local parts = room:FindFirstChild("Parts")
+	local floor = parts and parts:FindFirstChild("Floor")
+
+	if floor and floor:IsA("BasePart") then
+		return CFrame.new(
+			floor.Position + Vector3.new(0,HEIGHT,0)
+		)
+	end
+
+	if room:IsA("Model") then
+		local ok,cf = pcall(function()
+			return room:GetBoundingBox()
+		end)
+
+		if ok and cf then
+			return CFrame.new(
+				cf.Position + Vector3.new(0,HEIGHT,0)
+			)
+		end
+	end
+
+	local part = room:FindFirstChildWhichIsA("BasePart",true)
+
+	if part then
+		return CFrame.new(
+			part.Position + Vector3.new(0,HEIGHT,0)
+		)
+	end
+end
+
+local function PositionEntity(object,cf)
+	if not object or not cf then
+		return
+	end
+
+	pcall(function()
+		if object:IsA("Model") then
+			object:PivotTo(cf)
+		elseif object:IsA("BasePart") then
+			object.CFrame = cf
+		end
+	end)
+end
+
+local function SetVisible(visible)
+	if not Model or not Model.Parent then
+		return
+	end
+
+	HungerVisible = visible
+
+	for _,obj in ipairs(Model:GetDescendants()) do
+		if obj:IsA("BasePart") then
+			obj.LocalTransparencyModifier = visible and 0 or 1
+
+		elseif obj:IsA("Decal") or obj:IsA("Texture") then
+			obj.Transparency = visible and 0 or 1
+
+		elseif obj:IsA("ParticleEmitter")
+			or obj:IsA("Trail")
+			or obj:IsA("Beam")
+			or obj:IsA("PointLight")
+			or obj:IsA("SpotLight")
+			or obj:IsA("SurfaceLight") then
+
+			obj.Enabled = visible
+		end
+	end
+end
+
+local function CreateModel()
+	local existing
+
+	for _,obj in ipairs(Workspace:GetDescendants()) do
+		if obj.Name == ENTITY_NAME then
+			existing = obj
+			break
+		end
+	end
+
+	if existing then
+		return existing
+	end
+
+	local ok,objects = pcall(function()
+		return game:GetObjects(MODEL_ID)
+	end)
+
+	if not ok or not objects or #objects == 0 then
+		warn("[HUNGER] Failed to load model")
+		return
+	end
+
+	local object = objects[1]
+	object.Name = ENTITY_NAME
+
+	local root = GetRoot(object)
+
+	if object:IsA("Model") and root then
+		object.PrimaryPart = root
+	end
+
+	for _,part in ipairs(object:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = true
+		end
+	end
+
+	object:SetAttribute("IsCustomEntity",true)
+	object:SetAttribute("EntityName","Hunger")
+	object:SetAttribute("CrucifixCompatible",true)
+	object:SetAttribute("CanBeCrucified",true)
+	object:SetAttribute("CrucifixResist",false)
+	object:SetAttribute("CrucifixType","Guiding")
+	object:SetAttribute("CrucifixRange",70)
+	object:SetAttribute("CrucifixBreak",true)
+	object:SetAttribute("CrucifixColor",Color3.fromRGB(135,206,235))
+	object:SetAttribute("HungerScreamFinished",false)
+	object:SetAttribute("GoingToHell",false)
+
+	object.Parent = Workspace
+
+	return object
+end
+
+local function StopScream()
+	ScreamRunning = false
+
+	if ScreamSound then
+		pcall(function()
+			ScreamSound:Stop()
+			ScreamSound:Destroy()
+		end)
+
+		ScreamSound = nil
+	end
+end
+
+local function IsCrucifixActive()
+	if not Model then
+		return false
+	end
+
+	for _,name in ipairs({
+		"GoingToHell",
+		"Crucified",
+		"CrucifixHit",
+		"Exorcised"
+	}) do
+		if Model:GetAttribute(name) == true then
+			return true
+		end
+
+		local value = Model:FindFirstChild(name,true)
+
+		if value
+			and value:IsA("BoolValue")
+			and value.Value then
+
+			return true
+		end
+	end
+
+	return false
+end
+
+local function CrucifixFinish()
+	if CrucifixFinished or CrucifixRemoving then
+		return
+	end
+
+	CrucifixActive = true
+	CrucifixRemoving = true
+	DamageRunning = false
+
+	StopScream()
+
+	if Model then
+		Model:SetAttribute("GoingToHell",true)
+		Model:SetAttribute("CrucifixFinished",true)
+	end
+
+	task.spawn(function()
+		task.wait(3)
+
+		if Stopped then
+			return
+		end
+
+		CrucifixFinished = true
+		CrucifixRemoving = false
+
+		if Model then
+			Model:Destroy()
+		end
+
+		Model = nil
+		MainPart = nil
+	end)
+end
+
+local function SetupCrucifix()
+	if not Model then
+		return
+	end
+
+	for _,connection in ipairs(EntityConnections) do
+		pcall(function()
+			connection:Disconnect()
+		end)
+	end
+
+	table.clear(EntityConnections)
+
+	table.insert(
+		EntityConnections,
+		Model.AttributeChanged:Connect(function(name)
+			if name == "GoingToHell"
+				or name == "Crucified"
+				or name == "CrucifixHit"
+				or name == "Exorcised" then
+
+				if IsCrucifixActive() then
+					CrucifixFinish()
+				end
+			end
+		end)
+	)
+
+	table.insert(
+		EntityConnections,
+		Model.DescendantAdded:Connect(function(obj)
+			if not obj:IsA("BoolValue") then
+				return
+			end
+
+			if obj.Name == "GoingToHell"
+				or obj.Name == "Crucified"
+				or obj.Name == "CrucifixHit"
+				or obj.Name == "Exorcised" then
+
+				table.insert(
+					EntityConnections,
+					obj.Changed:Connect(function()
+						if obj.Value then
+							CrucifixFinish()
+						end
+					end)
+				)
+
+				if obj.Value then
+					CrucifixFinish()
+				end
+			end
+		end)
+	)
+
+	if IsCrucifixActive() then
+		CrucifixFinish()
+	end
+end
+
+local function DamagePlayer(amount)
+	if Stopped
+		or CrucifixActive
+		or CrucifixFinished
+		or CrucifixRemoving then
+
+		return
+	end
+
+	local humanoid = GetHumanoid()
+
+	if humanoid and humanoid.Health > 0 then
+		humanoid:TakeDamage(amount)
+	end
+end
+
+local function StartDamage()
+	if DamageRunning
+		or Stopped
+		or not HungerVisible then
+
+		return
+	end
+
+	DamageRunning = true
+
+	task.spawn(function()
+		while DamageRunning
+			and not Stopped
+			and HungerVisible
+			and not CrucifixActive
+			and not CrucifixFinished
+			and not CrucifixRemoving
+			and Model
+			and Model.Parent do
+
+			if IsCrucifixActive() then
+				CrucifixFinish()
+				break
+			end
+
+			local humanoid = GetHumanoid()
+
+			if humanoid
+				and humanoid.Health > 0
+				and MainPart then
+
+				local camera = Workspace.CurrentCamera
+
+				if camera then
+					local offset =
+						MainPart.Position-camera.CFrame.Position
+
+					local looking = false
+
+					if offset.Magnitude > 0.01 then
+						looking =
+							camera.CFrame.LookVector:Dot(
+								offset.Unit
+							) >= 0.55
+					end
+
+					if not looking and not humanoid.Sit then
+						DamagePlayer(NORMAL_DAMAGE)
+					end
+				end
+			end
+
+			task.wait(DAMAGE_INTERVAL)
+		end
+	end)
+end
+
+local function StartScream(room)
+	if Stopped
+		or not room
+		or SequenceRunning
+		or CrucifixFinished then
+
+		return
+	end
+
+	SequenceRunning = true
+	ScreamRunning = true
+	HungerVisible = false
+
+	SetVisible(false)
+
+	local sound = Instance.new("Sound")
+	sound.Name = "HungerScream"
+	sound.SoundId = "rbxassetid://" .. SCREAM_ID
+	sound.Volume = SOUND_VOLUME
+	sound.Looped = false
+	sound.Parent = Player.Character or Workspace
+
+	ScreamSound = sound
+	sound:Play()
+
+	local finished = false
+
+	local function Finish()
+		if finished then
+			return
+		end
+
+		finished = true
+		ScreamRunning = false
+		SequenceRunning = false
+
+		if ScreamSound then
+			pcall(function()
+				ScreamSound:Stop()
+				ScreamSound:Destroy()
+			end)
+
+			ScreamSound = nil
+		end
+
+		if Stopped then
+			return
+		end
+
+		if GetCurrentRoom() ~= room then
+			return
+		end
+
+		if not Model or not Model.Parent then
+			return
+		end
+
+		HungerVisible = true
+		SetVisible(true)
+
+		Model:SetAttribute(
+			"HungerScreamFinished",
+			true
+		)
+
+		StartDamage()
+	end
+
+	sound.Ended:Connect(Finish)
+
+	task.spawn(function()
+		local timeout = os.clock()+20
+
+		while not Stopped
+			and not finished
+			and ScreamRunning do
+
+			local current = GetRoomNumber()
+			local start = tonumber(room.Name)
+
+			if current and start and current ~= start then
+				DamagePlayer(OPEN_DOOR_DAMAGE)
+				StopScream()
+				Finish()
+				return
+			end
+
+			if os.clock() >= timeout then
+				Finish()
+				return
+			end
+
+			task.wait(0.03)
+		end
+	end)
+end
+
+local function SpawnHunger(room)
+	if Stopped
+		or not room
+		or CrucifixFinished then
+
+		return
+	end
+
+	if Model and Model.Parent then
+		return
+	end
+
+	Model = CreateModel()
+
+	if not Model then
+		return
+	end
+
+	MainPart = GetRoot(Model)
+
+	if not MainPart then
+		Model:Destroy()
+		Model = nil
+		return
+	end
+
+	CurrentRoom = room
+	CurrentRoomNumber = tonumber(room.Name)
+
+	if Model:IsA("Model") then
+		Model.PrimaryPart = MainPart
+	end
+
+	local cf = GetRoomCenter(room)
+
+	if cf then
+		PositionEntity(Model,cf)
+	end
+
+	SetVisible(false)
+	SetupCrucifix()
+	StartScream(room)
+end
+
+local function OnRoomChanged(value)
+	if Stopped then
+		return
+	end
+
+	local number = tonumber(value)
+
+	if not number or number == CurrentRoomNumber then
+		return
+	end
+
+	StopScream()
+	SequenceRunning = false
+	DamageRunning = false
+
+	if Model then
+		Model:Destroy()
+	end
+
+	Model = nil
+	MainPart = nil
+	CurrentRoom = nil
+	CurrentRoomNumber = nil
+	HungerVisible = false
+	CrucifixActive = false
+	CrucifixRemoving = false
+end
+
+local function StopEverything()
+	Stopped = true
+	DamageRunning = false
+	ScreamRunning = false
+	SequenceRunning = false
+
+	StopScream()
+
+	if RoomConnection then
+		RoomConnection:Disconnect()
+		RoomConnection = nil
+	end
+
+	for _,connection in ipairs(EntityConnections) do
+		pcall(function()
+			connection:Disconnect()
+		end)
+	end
+
+	table.clear(EntityConnections)
+
+	if Model then
+		Model:Destroy()
+	end
+
+	Model = nil
+	MainPart = nil
+end
+
+function Controller.Stop()
+	Stopped = true
+	DamageRunning = false
+	ScreamRunning = false
+	SequenceRunning = false
+
+	StopScream()
+
+	if RoomConnection then
+		RoomConnection:Disconnect()
+		RoomConnection = nil
+	end
+
+	for _,connection in ipairs(EntityConnections) do
+		pcall(function()
+			connection:Disconnect()
+		end)
+	end
+
+	table.clear(EntityConnections)
+end
+
+_G.StopHungerEntity = StopEverything
+
+task.spawn(function()
+	if not GameData or not LatestRoom then
+		return
+	end
+
+	local rooms = Workspace:WaitForChild("CurrentRooms",10)
+
+	if not rooms then
+		return
+	end
+
+	local room
+	local timeout = os.clock()+15
+
+	repeat
+		if Stopped then
+			return
+		end
+
+		room = GetCurrentRoom()
+
+		if not room then
+			task.wait(0.1)
+		end
+	until room or os.clock() >= timeout
+
+	if not room then
+		return
+	end
+
+	RoomConnection = LatestRoom.Changed:Connect(OnRoomChanged)
+
+	local existing
+
+	for _,obj in ipairs(Workspace:GetDescendants()) do
+		if obj.Name == ENTITY_NAME then
+			existing = obj
+			break
+		end
+	end
+
+	if existing then
+		Model = existing
+		MainPart = GetRoot(Model)
+		CurrentRoom = room
+		CurrentRoomNumber = tonumber(room.Name)
+
+		SetupCrucifix()
+
+		if Model:GetAttribute("HungerScreamFinished") == true then
+			HungerVisible = true
+			SetVisible(true)
+			StartDamage()
+		else
+			HungerVisible = false
+			SetVisible(false)
+			StartScream(room)
+		end
+	else
+		SpawnHunger(room)
+	end
+end)
+
+print("[HUNGER] Loaded")
